@@ -1,7 +1,7 @@
 import sparkApp
 from pyspark.sql import SparkSession
 import pandasApp
-from hdfs import InsecureClient
+import pyarrow.fs as fs
 import os
 
 
@@ -13,6 +13,7 @@ spark = (SparkSession.builder
 schema="bank1."
 
 app = sparkApp.SparkApp(spark)
+
 tables = ["accounts",
           "transactions",
           "clients", 
@@ -34,23 +35,31 @@ files_csv=["x5_data/stores.csv",
            "x5_data/terminals.csv",
            "x5_data/terminal_types.csv",
            "magnit_data/stores.csv",
-           "magnit_data/store_type.csv",
+           "magnit_data/stores_type.csv",
            "magnit_data/terminals.csv"]
 
-client = InsecureClient("http://localhost:9000")
-client.makedirs("/data_stores")
+
+
+HDFS_HOST = "localhost"  
+HDFS_PORT = 9000         
+
+
+# Create HDFS filesystem
+connection = fs.HadoopFileSystem(host=HDFS_HOST, port=HDFS_PORT)
+
+
 
 
 if __name__ == "__main__":
-  #  for table in tables:
-  #    app.read_save_table_from_pg("jdbc:postgresql://localhost:54320/postgres",
-  #                                "postgres",
-  #                                "password",
-  #                                schema+table,
-  #                                "hdfs://localhost:9000/data_bank/bank1/"  + table)
+   for table in tables:
+     app.read_save_table_from_pg("jdbc:postgresql://localhost:54320/postgres",
+                                 "postgres",
+                                 "password",
+                                 schema+table,
+                                 "hdfs://localhost:9000/data_bank/bank1/"  + table)
 
    for filepath in files_csv:
-     csv_load.read_upload_data_from_csv(path_csv_dir + filepath, client, "hdfs://localhost:9000/data_stores/"+os.path.splitext(os.path.basename(filepath))[0]+".parquet")
+     csv_load.read_upload_data_from_csv(path_csv_dir + filepath, connection, "/data_stores/"+filepath.split("/")[0]+"/"+os.path.splitext(os.path.basename(filepath))[0]+".parquet")
       
     
   

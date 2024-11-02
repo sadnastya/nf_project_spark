@@ -13,6 +13,4 @@ class SparkApp:
             .option("dbtable", dbtable) \
             .load()
 
-        df.show()
-
         df.write.mode("overwrite").parquet(path_hdfs)
