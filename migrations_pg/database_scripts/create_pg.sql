@@ -1,7 +1,6 @@
 create schema if not exists bank1;
 
 
-
 create table if not exists bank1.transaction_type(
 	id integer primary key,
 	type varchar);

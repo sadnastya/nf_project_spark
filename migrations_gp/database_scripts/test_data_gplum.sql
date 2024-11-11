@@ -1,22 +1,22 @@
-set schema 'student156';
 
-INSERT INTO account_type (id, type) VALUES
+
+INSERT INTO bank2.account_type (id, type) VALUES
   (1, 'credit'),
   (2, 'debit');
 
 
-INSERT INTO account_status (id, status) VALUES
+INSERT INTO bank2.account_status (id, status) VALUES
   (1, 'open'),
   (2, 'pending'),
   (3, 'closed'),
   (4, 'frozen');
 
 
-INSERT INTO currency (id, full_name) VALUES
+INSERT INTO bank2.currency (id, full_name) VALUES
   ('RUB', 'Russian Ruble');
 
 
-INSERT INTO clients (name, surname, date_of_birth, gender, phone_number, email) VALUES
+INSERT INTO bank2.clients (name, surname, date_of_birth, gender, phone_number, email) VALUES
   ( 'Павел', 'Никитин', '1981-02-15', 'M', 654321098, 'pavel.nikitin@example.ru'),
   ('Анастасия', 'Васильева', '1996-03-20', 'F', 876543210, 'anastasia.vasilieva@example.ru'),
   ( 'Игорь', 'Кузьмин', '1979-04-12', 'M', 342187654, 'igor.kuzmin@example.ru'),
@@ -40,7 +40,7 @@ INSERT INTO clients (name, surname, date_of_birth, gender, phone_number, email) 
   ( 'Сергей', 'Петров', '1989-10-20', 'M', 765943218, 'sergey.petrov@example.ru');
 
 
-INSERT INTO accounts (client_id, type, status, balance, currency)
+INSERT INTO bank2.accounts (client_id, type, status, balance, currency)
 VALUES
   (1, 1, 1, 1500.00, 'RUB'),
   (3, 2, 1, 250.00, 'RUB'),
@@ -53,18 +53,18 @@ VALUES
   (17, 1, 1, 8000.00, 'RUB'),
   (1, 2, 1, 6000.00, 'RUB');
 
-INSERT INTO sellers(name, inn, kpp, ogrn, okpo, address, phone, email)
+INSERT INTO bank2.sellers(name, inn, kpp, ogrn, okpo, address, phone, email)
 VALUES
     ('ООО "Лента"','987654321012','987654321','987654321012345','9876543210','Москва, ул. Ломоносова, д. 11','+7 (495) 987-65-43','info@lenta.ru'),
     ('ООО "Перекресток"','623456789012','623456789','123466789012345','6234567890','Москва, ул. Кошкина, д. 22','+7 (495) 123-45-67','info@perekrestok.ru');
 
-insert into terminal_type (id, type) values
+insert into bank2.terminal_type (id, type) values
 	(1, 'desk'),
 	(2, 'self-service'),
     (3, 'online');
 
 
-INSERT INTO terminals(seller_id, type, created_at)
+INSERT INTO bank2.terminals(seller_id, type, created_at)
 VALUES
   (2, 2, '2022-01-02'),
   (1, 3, '2022-02-03'),
@@ -79,13 +79,13 @@ VALUES
 
 
 
-INSERT INTO transaction_status (id, status) VALUES
+INSERT INTO bank2.transaction_status (id, status) VALUES
     (1, 'success'),
     (2, 'processing'),
     (3, 'failed');
 
 
-INSERT INTO transactions (terminal_id, account_id, transaction_date, amount, currency, status)
+INSERT INTO bank2.transactions (terminal_id, account_id, transaction_date, amount, currency, status)
 VALUES
   (8, 9, '2023-02-15 18:00:00', 4200.00, 'RUB',2),
   (7, 3, '2023-03-20 10:00:00', 300.00,  'RUB',1),

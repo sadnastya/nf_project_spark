@@ -5,16 +5,12 @@ import pyarrow.fs as fs
 import os
 
 
-spark = (SparkSession.builder
-                      .appName("My Spark App")
-                      .master("local[2]")
-                      .config("spark.driver.extraClassPath", "/home/asadovaia/drivers/postgresql-42.7.4.jar")\
-                      .getOrCreate())
-schema="bank1."
 
-app = sparkApp.SparkApp(spark)
+schema1="bank1."
 
-tables = ["accounts",
+schema2="bank2."
+
+tables_pg = ["accounts",
           "transactions",
           "clients", 
           "account_type", 
@@ -24,6 +20,18 @@ tables = ["accounts",
           "currency", 
           "merchants", 
           "terminal_status", 
+          "terminal_type",
+          "terminals"]
+
+tables_gp = ["accounts",
+          "transactions",
+          "clients", 
+          "account_type", 
+          "account_status",  
+          "transaction_type", 
+          "transaction_status",
+          "currency", 
+          "sellers", 
           "terminal_type",
           "terminals"]
 
@@ -41,25 +49,41 @@ files_csv=["x5_data/stores.csv",
 
 
 HDFS_HOST = "localhost"  
-HDFS_PORT = 9000         
+HDFS_PORT = 9000    
 
 
-# Create HDFS filesystem
 connection = fs.HadoopFileSystem(host=HDFS_HOST, port=HDFS_PORT)
 
 
 
 
 if __name__ == "__main__":
-   for table in tables:
-     app.read_save_table_from_pg("jdbc:postgresql://localhost:54320/postgres",
-                                 "postgres",
-                                 "password",
-                                 schema+table,
-                                 "hdfs://localhost:9000/data_bank/bank1/"  + table)
+   spark = (SparkSession.builder
+                      .appName("My Spark App")
+                      .master("local[2]")
+                      .config("spark.driver.extraClassPath", "/home/asadovaia/drivers/postgresql-42.7.4.jar")\
+                      .getOrCreate())
+   
+   app = sparkApp.SparkApp(spark)
+
+   app.run(tables_pg,
+           tables_gp,
+           schema1, 
+           schema2, 
+           "jdbc:postgresql://localhost:54320/postgres", 
+           "postgres", 
+           "password", 
+           "jdbc:postgresql://localhost:5432/postgres", 
+           "gpadmin", 
+           "123456")
+ 
 
    for filepath in files_csv:
-     csv_load.read_upload_data_from_csv(path_csv_dir + filepath, connection, "/data_stores/"+filepath.split("/")[0]+"/"+os.path.splitext(os.path.basename(filepath))[0]+".parquet")
+     if filepath.split("/")[0] == "x5_data":
+        sep=','
+     else:
+        sep=';'
+     csv_load.read_upload_data_from_csv(path_csv_dir + filepath, sep, connection, "/data_stores/"+filepath.split("/")[0]+"/"+os.path.splitext(os.path.basename(filepath))[0]+".parquet")
       
     
   
