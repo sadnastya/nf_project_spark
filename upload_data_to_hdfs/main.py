@@ -38,13 +38,15 @@ tables_gp = ["accounts",
 csv_load=pandasApp.StoresData()
 
 path_csv_dir="data_stores/"
-files_csv=["x5_data/stores.csv",
-           "x5_data/store_types.csv",
-           "x5_data/terminals.csv",
+files_csv=["x5_data/terminals.csv",
            "x5_data/terminal_types.csv",
+           "x5_data/stores.csv",
+           "x5_data/store_types.csv",
+           
+           "magnit_data/terminals.csv",
            "magnit_data/stores.csv",
            "magnit_data/stores_type.csv",
-           "magnit_data/terminals.csv"]
+           ]
 
 
 
