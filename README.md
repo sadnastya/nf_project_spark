@@ -1,66 +1,93 @@
-# nf_project_spark
+# nf_project_spark — ELT-пайплайн пакетной аналитики (HDFS + Spark + Airflow)
 
-## Общее описание
+Практическая работа № 2. Пайплайн забирает выгрузки двух банков и справочники торговых сетей
+(источники из работы № 1), загружает их в HDFS в сжатом виде и преобразует Spark'ом
+в оптимизированную для аналитики звёздную схему и витрины. Оркестрация — Apache Airflow,
+аналитика — Jupyter + Spark SQL. Подробное обоснование и результаты — в [REPORT.md](REPORT.md).
 
-ETL-пайплайн для сбора, преобразования и загрузки банковских данных в витрины данных. Проект читает транзакционные данные из двух банковских систем (PostgreSQL и Greenplum), а также справочные данные о торговых точках двух ритейлеров (X5 и Магнит), выгружает всё в промежуточное хранилище HDFS в формате Parquet, затем джойнит и трансформирует данные через Spark и загружает итоговые витрины обратно в PostgreSQL.
+```
+ extract               load                      transform (Spark)                    analytics
+┌──────────┐   ┌───────────────────┐   ┌──────────────────────────────┐   ┌──────────────────┐
+│ landing  │   │ HDFS raw          │   │ core (Parquet+zstd)          │   │ marts (Parquet)  │
+│ CSV на   │──▶│ csv.gz as-is      │──▶│ fact_transactions/txn_month= │──▶│ dm_daily_sales   │──▶ Jupyter
+│ диске    │   │ batch=YYYY-MM     │   │ dim_terminal/client/account  │   │ dm_retailer_...  │    Spark SQL
+└──────────┘   └───────────────────┘   │ quarantine (брак)            │   │ dm_client_...    │
+                                       └──────────────────────────────┘   │ dm_hourly_load   │
+                     Airflow DAG bank_elt (@monthly, catchup 2024-01…2024-12)  └──────────────────┘
+   extract_to_landing ▶ load_raw_to_hdfs ▶ transform_raw_to_core ▶ dq_core ▶ build_marts ▶ dq_marts
+```
 
+## Стек
 
-## Стек технологий
+| Компонент | Версия | Роль |
+|---|---|---|
+| Hadoop HDFS (namenode + datanode) | 3.2.1 | хранилище data lake |
+| Apache Spark standalone (master + worker) | 3.5.4 | трансформации и аналитика |
+| Apache Airflow (LocalExecutor, Postgres) | 2.10.5 | оркестрация, расписание, ретраи, DQ-гейты |
+| JupyterLab + PySpark | 4.2 / 3.5.4 | аналитика и отчёт |
+| Python: pandas, numpy, hdfs (WebHDFS) | — | extract и load |
 
-| Категория | Технологии |
+## Структура репозитория
+
+```
+docker-compose.yml        стенд: HDFS, Spark, Airflow, Jupyter
+hadoop.env, airflow.env   конфигурация сервисов и пайплайна
+docker/airflow/           образ Airflow + Java + pyspark (Spark-драйвер в client mode)
+docker/jupyter/           образ Jupyter на базе apache/spark
+dags/bank_elt.py          DAG bank_elt (месячные batch'и) и bank_elt_benchmark
+pipeline/
+  settings.py             пути слоёв, описание источников
+  extract/generate.py     extract: выгрузки источников в landing (CSV)
+  load/hdfs_loader.py     load: gzip-стриминг в HDFS raw + манифест
+  spark_jobs/raw_to_core.py    transform 1: raw -> звезда (очистка, унификация, карантин)
+  spark_jobs/core_to_marts.py  transform 2: core -> витрины
+  spark_jobs/benchmark.py      замеры: размеры слоёв, кодеки, время запросов
+  quality/checks.py       DQ-проверки между шагами
+notebooks/                analytics.ipynb (собирается из build_notebook.py)
+data_stores/              справочники X5/Магнит из работы №1 (seed для генератора)
+migrations_pg, migrations_gp  схемы источников bank1 (PostgreSQL) и bank2 (Greenplum) из работы №1
+```
+
+## Запуск
+
+Нужно: Docker + Compose, ~8 ГБ свободной RAM, ~8 ГБ диска.
+
+```bash
+make up          # сборка образов и запуск; Airflow поднимается ~1 мин
+make run         # снять DAG bank_elt с паузы -> 12 месячных запусков (≈ 2 мин на месяц)
+make benchmark   # после завершения: DAG bank_elt_benchmark
+make notebook    # выполнить ноутбук с аналитикой (или открыть его в Jupyter)
+make hdfs-ls     # размеры слоёв
+```
+
+| UI | адрес |
 |---|---|
-| Обработка данных | Apache Spark (PySpark), Pandas, PyArrow |
-| Хранилище | Apache Hadoop (HDFS) |
-| Базы данных | PostgreSQL, Greenplum |
-| Форматы | Parquet, CSV |
-| Миграции | Alembic |
-| Язык | Python 3 |
-| Драйверы | JDBC (postgresql-42.7.4.jar), PyWebHDFS, pyarrow.fs |
+| Airflow | http://localhost:8080 (admin / admin) |
+| HDFS NameNode | http://localhost:9870 (Utilities → Browse the file system) |
+| Spark Master | http://localhost:8081 |
+| Jupyter | http://localhost:8888 → `analytics.ipynb` |
 
----
+Объём регулируется в `airflow.env`: `TX_PER_MONTH` (по умолчанию 1 000 000 транзакций bank1
+в «средний» месяц, bank2 — 80% от этого) и `DATA_SCALE` (по умолчанию 3 — множитель
+справочников: клиенты, счета, магазины, терминалы, мерчанты). С настройками по умолчанию за
+12 месяцев получается 21.6 млн транзакций, 1.1 ГБ CSV только по транзакциям и 2.1 ГБ вместе
+со снимками справочников (≈ 180 МБ на месяц).
 
-## Структура проекта
+Перезапуск месяца — Clear задачи/запуска в UI Airflow: все шаги идемпотентны (перезаписывают
+только свою партицию batch/txn_month).
 
-### `data_stores/`
-Исходные CSV-файлы со справочными данными о торговых точках и терминалах двух ритейлеров.
+## Источники (extract)
 
-- **`x5_data/`** — данные сети X5 Retail Group: магазины (`stores.csv`), типы магазинов (`store_types.csv`), терминалы (`terminals.csv`), типы терминалов (`terminal_types.csv`). Разделитель — запятая, адрес хранится в отдельных полях (регион, город, адрес).
-- **`magnit_data/`** — данные сети Магнит: магазины (`stores.csv`), типы магазинов (`stores_type.csv`), терминалы (`terminals.csv`). Разделитель — точка с запятой, адрес хранится в одном поле `full_address` и требует парсинга при трансформации.
+`pipeline/extract/generate.py` эмулирует ежемесячные выгрузки систем из работы № 1 в
+`data/landing/<source>/batch=YYYY-MM/`:
 
+| источник | формат | особенности |
+|---|---|---|
+| bank1 (PostgreSQL) | CSV `,` | даты ISO, `merchants`, статусы `successful/pending/rejected` |
+| bank2 (Greenplum) | CSV `\|` | даты `dd.mm.yyyy`, десятичная запятая, `sellers`, статусы `success/processing/failed` |
+| x5 | CSV `,` | адрес разложен по колонкам |
+| magnit | CSV `;` | адрес одной строкой `full_address`, «обл.», латиница в названиях регионов |
 
-### `migrations_pg/`
-Alembic-миграции и SQL-скрипты для инициализации схемы **bank1** в PostgreSQL.
-
-- **`database_scripts/create_pg.sql`** — DDL-скрипт создания схемы `bank1`: таблицы клиентов, счетов, транзакций, мерчантов, терминалов и всех справочников (типы, статусы, валюты).
-- **`database_scripts/test_data_pg.sql`** — вставка тестовых данных в схему bank1.
-- **`versions/`** — ревизии Alembic: создание таблиц и наполнение тестовыми данными.
-- **`alembic.ini`**, **`env.py`** — конфигурация подключения и среды для запуска миграций.
-
-
-### `migrations_gp/`
-Alembic-миграции и SQL-скрипты для инициализации схемы **bank2** в Greenplum.
-
-Структура аналогична `migrations_pg/`, но адаптирована под Greenplum: все таблицы создаются с директивой `DISTRIBUTED BY(id)`. Схема называется `bank2`, а таблица продавцов называется `sellers` (вместо `merchants` в bank1).
-
-- **`database_scripts/create_gplum.sql`** — DDL для Greenplum с распределением данных.
-- **`database_scripts/test_data_gplum.sql`** — тестовые данные для bank2.
-- **`versions/`** — ревизии Alembic для Greenplum.
-
-### `upload_data_to_hdfs/`
-Первый этап пайплайна: выгрузка данных из баз данных и CSV-файлов в HDFS.
-
-- **`sparkApp.py`** — класс `SparkApp`, который читает таблицы из PostgreSQL (схема `bank1`) и Greenplum (схема `bank2`) через JDBC и сохраняет их в HDFS (`/data_bank/bank1/` и `/data_bank/bank2/`) в формате Parquet.
-- **`pandasApp.py`** — класс `StoresData`, который читает CSV-файлы ритейлеров через Pandas, конвертирует в Parquet через PyArrow и записывает напрямую в HDFS (`/data_stores/`) через `pyarrow.fs.HadoopFileSystem`.
-- **`main.py`** — точка входа: инициализирует SparkSession, запускает выгрузку банковских таблиц через `sparkApp`, затем итерируется по CSV-файлам ритейлеров и загружает их через `pandasApp`.
-
-
-### `read_transform_load_to_dm/`
-Второй этап пайплайна: чтение из HDFS, трансформация и загрузка в целевые витрины данных.
-
-- **`SparkApp.py`** — основная логика трансформации:
-  - Читает таблицы bank1 и bank2 из HDFS и загружает их напрямую в витрины `dm_bank1` и `dm_bank2` в PostgreSQL.
-  - Для данных X5: джойнит терминалы, типы терминалов, магазины и типы магазинов в единую таблицу `terminals_info` с полями `terminal_id`, `terminal_type`, `store_region`, `store_address`, `store_type`.
-  - Для данных Магнит: парсит поле `full_address` (разбивает на регион, город, улицу, номер дома), затем джойнит с терминалами и типами и формирует аналогичную таблицу `terminals_info`.
-  - Все результаты пишутся в PostgreSQL через JDBC в режиме `overwrite`.
-- **`main.py`** — точка входа: задаёт списки таблиц и путей, инициализирует SparkSession и вызывает `SparkApp.run()`.
-- **`view_db.py`** — вспомогательный скрипт для проверки данных в целевой БД через Spark JDBC.
+Справочники ритейлеров дополнены TID эквайера (`acquirer_bank`, `acquirer_terminal_id`) —
+по нему терминал банка связывается с магазином. В транзакции подмешано ~0.05% брака
+(дубли, пустые суммы, битые даты, несуществующие терминалы).
